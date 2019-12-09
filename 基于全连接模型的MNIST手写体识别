@@ -1,0 +1,100 @@
+# 基于全连接模型的MNIST手写体识别
+**tensorflow 1.14**
+- 利用tensorflow.examples.tutorials.mnist模块对MNIST数据进行解析
+- 利用Rule()函数作为各层激活函数
+- 利用交叉熵构建代价函数
+- 最终识别准确率为0.97左右
+import tensorflow as tf
+from tensorflow.examples.tutorials.mnist import input_data
+
+## 载入数据
+**input_data.read_data_sets()**
+- 该函数返回一个类，将MNIST数据集划分为train（55000）、validation（5000）及test（10000）三个数据集
+
+mnist = input_data.read_data_sets(r'E:\tensorflow_mnist\mnist',one_hot = True)
+#one_hot = True将MNIST图像中的灰度值转换为布尔值
+
+## 设置变量空间
+**tf.placeholder(dtype, shape=None, name=None)**
+- 占位符用于传递外部数据
+x = tf.placeholder(tf.float32,[None,784])       #mnist图片空占位
+y_data = tf.placeholder(tf.float32,[None,10])   #mnist标签空占位
+keep_prob = tf.placeholder(tf.float32)          #dropout比例空占位
+
+## 参数
+INPUT_NODE = 784     #输入节点，图片像素28*28
+OUT_NODE = 10        #输出节点，标签概率信息
+LAYER1_NODE = 500    #隐藏层1节点
+LAYER2_NODE = 500    #隐藏层2节点
+LEARNING_RATE = 0.1  #学习率
+KEEP_PROB = 0.7      #dropout比例
+EPOCH = 30           #学习次数
+batch_size = 100     #训练块大小
+batch_n = mnist.train.num_examples // batch_size  #训练块数量
+
+## 全连接模型
+- 两层隐藏层构成，通过relu()函数去线性化，通过dropout()函数以防过拟合
+**模型**
+$$y=x\times \omega + b$$
+**tf.matmul(a, b)**
+- 返回一个跟张量a，b类型一样且最内部矩阵是a和b中的相应矩阵的乘积的张量
+**tf.nn.relu()**
+- 返回值小于零时，返回零；返回值大于零时，返回原值
+**tf.nn.dropout(x, keep_prob)**
+- x：输入；keep_prob：保留比例
+- 防止在训练中过拟合，将训练输出按一定规则进行变换
+**tf.nn.softmax()**
+- 对输出进行归一化操作，将节点值映射为[0, 1]中的值
+w1 = tf.Variable(tf.truncated_normal([INPUT_NODE, LAYER1_NODE], stddev = 0.1))
+b1 = tf.Variable(tf.zeros([1, LAYER1_NODE]))
+L1 = tf.nn.relu(tf.matmul(x, w1) + b1)
+L1_drop = tf.nn.dropout(L1, keep_prob)
+
+w2 = tf.Variable(tf.truncated_normal([LAYER1_NODE, LAYER2_NODE], stddev = 0.1))
+b2 = tf.Variable(tf.zeros([1, LAYER2_NODE]))
+L2 = tf.nn.relu(tf.matmul(L1_drop, w2) + b2)
+L2_drop = tf.nn.dropout(L2, keep_prob)
+
+w3 = tf.Variable(tf.truncated_normal([LAYER2_NODE, OUT_NODE], stddev = 0.1))
+b3 = tf.Variable(tf.zeros([1, OUT_NODE]))
+y = tf.nn.softmax(tf.matmul(L2_drop, w3) + b3)
+
+## 代价函数
+- 代价函数由单块图像的交叉熵求和构成
+#交叉熵代价函数
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels = y_data, logits = y))
+
+## 优化器
+- 随机梯度优化（SGD）：随机选取样本定步长进行优化，计算梯度较快，收敛较快
+- 动量梯度优化：标准动量梯度优化解决了SGD收敛波动较大的问题，但易错过最优点
+- 自适应学习率优化：无需人为调节学习率，但随着迭代次数增多，学习率越来越小，最终趋于
+- 常用SGD算法，学习率典型值为0.1，0.01
+**选用随机梯度优化**
+#随机梯度优化
+train = tf.train.GradientDescentOptimizer(LEARNING_RATE).minimize(loss)
+#初始化变量
+init = tf.global_variables_initializer()
+
+## 开始训练并评估结果
+**mnist.train.next_batch()**
+- 将训练数据分为块（bench）以便于使用梯度下降进行训练，bench_size表示每次训练所用图片数量
+- 返回`self._images[start:end], self._labels[start:end]`
+**tf.argmax(input,axis)**
+- 返回input（tensor对象）在axis维度上最大数据所在的索引值；此处axis = 1，即：返回y中每行最大概率所对应的索引，因标签值与索引值相等，故返回值即为预测标签值；
+**tf.equal(x,y)**
+- 返回x == y的值（bool）
+**tf.cast()**
+- 将correct_prediction（bool）转化为float32
+**tf.reduce_mean()**
+- 计算correct_prediction（float32）的均值，即列表中真值所占比例（准确率）
+#创建会话
+with tf.Session() as sess:
+    sess.run(init)
+    for epoch in range(EPOCH):
+        for batch in range(batch_n):
+            batch_xs, batch_ys = mnist.train.next_batch(batch_size)
+            sess.run(train,feed_dict = {x:batch_xs, y_data:batch_ys, keep_prob:KEEP_PROB})         
+    #利用测试集测试训练后准确度
+    prediction = tf.equal(tf.argmax(y,1),tf.argmax(y_data,1))
+    accuracy = tf.reduce_mean(tf.cast(prediction,tf.float32))
+    print (sess.run(accuracy, feed_dict={x: mnist.test.images, y_data: mnist.test.labels,keep_prob:1}))
